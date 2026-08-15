@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECOSENTINEL — AUV Mission Control</title>
+<style>
+:root{
+  --bg-0:#040a11;
+  --bg-1:#071522;
+  --panel:rgba(14,30,44,0.62);
+  --panel-border:rgba(120,170,200,0.16);
+  --panel-border-hi:rgba(120,190,220,0.35);
+  --ink-hi:#eaf4f8;
+  --ink:#a9c1cd;
+  --ink-dim:#5e7986;
+  --red:#ff4d5e;
+  --purple:#a970ff;
+  --cyan:#2fd9e8;
+  --blue:#4d8dff;
+  --green:#31d999;
+  --yellow:#ffcf3f;
+  --white:#f3f7f9;
+  --orange:#ff9640;
+  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{
+  background:
+    radial-gradient(ellipse 1200px 700px at 50% -10%, #0c2233 0%, transparent 60%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  color:var(--ink);
+  font-family:var(--sans);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+body{
+  background-image:
+    linear-gradient(rgba(90,160,190,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90,160,190,0.035) 1px, transparent 1px);
+  background-size:42px 42px;
+}
+.wrap{max-width:1440px; margin:0 auto; padding:20px 22px 60px;}
+
+/* ---------- shared panel ---------- */
+.panel{
+  background:var(--panel);
+  border:1px solid var(--panel-border);
+  border-radius:14px;
+  backdrop-filter:blur(10px);
+  position:relative;
+  overflow:hidden;
+}
+.panel::before{
+  content:"";
+  position:absolute; inset:0;
+  border-radius:14px;
+  padding:1px;
+  background:linear-gradient(135deg, rgba(120,200,230,0.25), transparent 40%);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude;
+  pointer-events:none;
+}
+.panel-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 16px; border-bottom:1px solid var(--panel-border);
+}
+.panel-title{
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--ink-hi); font-weight:600;
+}
+.panel-sub{font-size:10px; color:var(--ink-dim); letter-spacing:.08em; margin-top:2px;}
+.panel-body{padding:16px;}
+.tag{
+  font-family:var(--mono); font-size:9px; letter-spacing:.12em; padding:3px 7px; border-radius:5px;
+  border:1px solid currentColor; opacity:.85;
+}
+
+/* ---------- header ---------- */
+header.top{
+  display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between;
+  gap:16px; padding:22px 4px 20px; border-bottom:1px solid var(--panel-border); margin-bottom:18px;
+}
+.brand-eyebrow{
+  font-family:var(--mono); font-size:10px; letter-spacing:.3em; color:var(--cyan); margin-bottom:8px;
+}
+h1.brand{
+  font-family:var(--mono); font-size:clamp(26px,4vw,42px); letter-spacing:.04em; color:var(--white);
+  text-shadow:0 0 26px rgba(47,217,232,0.28);
+  font-weight:700;
+}
+.brand-line2{font-size:12px; letter-spacing:.16em; color:var(--ink); margin-top:6px;}
+.brand-line3{font-size:11px; color:var(--ink-dim); margin-top:3px; font-style:italic;}
+
+.status-grid{display:flex; flex-direction:column; gap:6px; align-items:flex-end;}
+.status-row{display:flex; gap:14px; flex-wrap:wrap; justify-content:flex-end;}
+.led-item{
+  display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--ink);
+}
+.led{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); animation:blink 2.2s infinite;}
+.led.warn{background:var(--orange); box-shadow:0 0 8px var(--orange);}
+@keyframes blink{0%,100%{opacity:1} 50%{opacity:.35}}
+
+.hud-strip{display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;}
+.hud-chip{
+  font-family:var(--mono); font-size:11px; color:var(--ink-hi); background:rgba(255,255,255,0.03);
+  border:1px solid var(--panel-border); padding:6px 12px; border-radius:8px; display:flex; gap:8px; align-items:baseline;
+}
+.hud-chip b{color:var(--white); font-size:13px; letter-spacing:.03em;}
+.hud-chip span.lbl{color:var(--ink-dim); font-size:9px; letter-spacing:.12em;}
+
+/* ---------- layout grid ---------- */
+.grid{display:grid; grid-template-columns:280px 1fr 300px; gap:16px; margin-bottom:16px;}
+@media (max-width:1180px){
+  .grid{grid-template-columns:1fr;}
+  .grid > .col[style*="grid-column:2"]{grid-column:auto!important;}
+}
+.col{display:flex; flex-direction:column; gap:16px;}
+
+/* ---------- hero AUV ---------- */
+.hero{grid-column:2; min-height:420px;}
+.hero .panel-body{display:flex; flex-direction:column; align-items:center; padding:10px 10px 6px;}
+.view-tabs{display:flex; gap:6px; margin-bottom:6px;}
+.view-tab{
+  font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--ink-dim);
+  background:transparent; border:1px solid var(--panel-border); padding:5px 12px; border-radius:7px; cursor:pointer;
+  transition:.15s;
+}
+.view-tab.active{color:var(--bg-0); background:var(--cyan); border-color:var(--cyan); font-weight:700;}
+.auv-stage{width:100%; position:relative;}
+.auv-stage svg{width:100%; height:auto; display:block;}
+.hotspot{cursor:pointer; transition:.15s;}
+.hotspot circle{fill:rgba(47,217,232,0.18); stroke:var(--cyan); stroke-width:1.4;}
+.hotspot:hover circle{fill:rgba(47,217,232,0.4); stroke-width:2;}
+.hs-pulse{animation:hspulse 2.4s ease-out infinite;}
+@keyframes hspulse{
+  0%{r:9; opacity:.9} 100%{r:20; opacity:0}
+}
+.thrust-badge{
+  font-family:var(--mono); font-size:9px; fill:var(--ink-dim);
+}
+.info-card{
+  margin-top:10px; width:100%; max-width:640px; background:rgba(255,255,255,0.03);
+  border:1px solid var(--panel-border-hi); border-radius:10px; padding:12px 16px;
+  font-family:var(--mono); font-size:11px; display:none;
+}
+.info-card.show{display:block;}
+.info-card h4{color:var(--cyan); font-size:12px; letter-spacing:.08em; margin-bottom:8px;}
+.info-row{display:grid; grid-template-columns:110px 1fr; gap:6px; padding:3px 0; color:var(--ink);}
+.info-row b{color:var(--ink-dim); font-weight:500;}
+
+/* ---------- thruster panel ---------- */
+.thr-row{display:flex; align-items:center; gap:10px; margin-bottom:9px; font-family:var(--mono); font-size:10px;}
+.thr-label{width:34px; color:var(--ink-dim);}
+.thr-bar-bg{flex:1; height:8px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden;}
+.thr-bar-fill{height:100%; background:linear-gradient(90deg, var(--purple), #d3a9ff); border-radius:4px; transition:width .6s ease;}
+.thr-val{width:38px; text-align:right; color:var(--ink-hi);}
+
+/* ---------- power panel ---------- */
+.pw-flow{display:flex; flex-direction:column; gap:0; font-family:var(--mono); font-size:10.5px;}
+.pw-node{
+  padding:8px 10px; border:1px solid rgba(255,77,94,0.3); border-radius:8px; color:var(--ink-hi);
+  background:rgba(255,77,94,0.06); display:flex; justify-content:space-between; align-items:center;
+}
+.pw-arrow{text-align:center; color:var(--red); font-size:12px; padding:3px 0; opacity:.7;}
+.pw-stats{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;}
+.stat-box{background:rgba(255,255,255,0.03); border:1px solid var(--panel-border); border-radius:8px; padding:8px 10px;}
+.stat-box .lbl{font-size:9px; color:var(--ink-dim); letter-spacing:.08em;}
+.stat-box .val{font-family:var(--mono); font-size:15px; color:var(--white); margin-top:2px;}
+
+/* ---------- computing panel ---------- */
+.compute-cols{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+.compute-box{border:1px solid var(--panel-border); border-radius:10px; padding:12px; background:rgba(255,255,255,0.02);}
+.compute-box h5{font-family:var(--mono); font-size:11px; color:var(--green); letter-spacing:.08em; margin-bottom:8px;}
+.compute-box ul{list-style:none; font-size:11px; color:var(--ink); line-height:1.85;}
+.compute-box ul li::before{content:"› "; color:var(--ink-dim);}
+.data-chain{
+  display:flex; align-items:center; justify-content:center; gap:6px; margin-top:14px; flex-wrap:wrap;
+  font-family:var(--mono); font-size:10px; color:var(--ink-dim);
+}
+.data-chain .node{color:var(--ink-hi); border:1px solid var(--panel-border); padding:4px 9px; border-radius:6px;}
+
+/* ---------- water quality ---------- */
+.wq-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.wq-item{background:rgba(255,255,255,0.03); border:1px solid rgba(47,217,232,0.2); border-radius:9px; padding:10px 12px;}
+.wq-item .lbl{font-size:9.5px; color:var(--cyan); letter-spacing:.1em;}
+.wq-item .val{font-family:var(--mono); font-size:18px; color:var(--white); margin-top:3px;}
+.wq-bar{height:5px; background:rgba(255,255,255,0.06); border-radius:3px; margin-top:8px; overflow:hidden;}
+.wq-bar i{display:block; height:100%; background:var(--cyan); border-radius:3px; transition:width .8s;}
+
+/* ---------- heatmap ---------- */
+.heatmap-wrap{position:relative;}
+canvas#heatCanvas{width:100%; height:340px; border-radius:10px; display:block; background:#031019;}
+.heat-legend{display:flex; gap:14px; margin-top:10px; font-family:var(--mono); font-size:9.5px; color:var(--ink-dim); flex-wrap:wrap;}
+.heat-legend span{display:flex; align-items:center; gap:5px;}
+.heat-legend i{width:9px; height:9px; border-radius:2px; display:inline-block;}
+.hotspot-alert{
+  position:absolute; top:12px; left:12px; background:rgba(255,77,94,0.14); border:1px solid var(--red); color:#ffd7da;
+  font-family:var(--mono); font-size:10px; padding:6px 11px; border-radius:7px; display:none; letter-spacing:.06em;
+}
+.hotspot-alert.show{display:block; animation:blink 1.6s infinite;}
+
+/* ---------- AI panel ---------- */
+.ai-io{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.ai-col h5{font-family:var(--mono); font-size:10px; color:var(--ink-dim); letter-spacing:.1em; margin-bottom:8px;}
+.ai-col ul{list-style:none; font-size:11.5px; line-height:1.8;}
+.ai-col.out ul li{color:var(--green);}
+.ai-col.in ul li{color:var(--ink);}
+.confidence{
+  margin-top:14px; text-align:center; font-family:var(--mono);
+}
+.confidence .num{font-size:30px; color:var(--green); text-shadow:0 0 18px rgba(49,217,153,0.4);}
+.confidence .lbl{font-size:9.5px; letter-spacing:.12em; color:var(--ink-dim); margin-top:2px;}
+
+/* ---------- sampling / gripper ---------- */
+.vials{display:flex; gap:8px; flex-wrap:wrap;}
+.vial{
+  width:52px; text-align:center; font-family:var(--mono); font-size:9px; color:var(--ink-dim);
+}
+.vial .tube{
+  width:20px; height:38px; margin:0 auto 6px; border:1.5px solid var(--panel-border-hi); border-radius:0 0 8px 8px;
+  position:relative; overflow:hidden; background:rgba(255,255,255,0.02);
+}
+.vial .tube i{position:absolute; bottom:0; left:0; right:0; height:0%; background:var(--cyan); transition:height 1s;}
+.vial.sealed .tube i{height:82%; background:var(--green);}
+.vial.collecting .tube i{height:45%; background:var(--yellow); animation:blink 1s infinite;}
+.gripper-states{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;}
+.g-state{
+  font-family:var(--mono); font-size:9.5px; padding:4px 9px; border-radius:6px; border:1px solid var(--panel-border); color:var(--ink-dim);
+}
+.g-state.active{color:var(--bg-0); background:var(--orange); border-color:var(--orange); font-weight:700;}
+
+/* ---------- nav/sonar ---------- */
+.sonar-wrap{display:flex; justify-content:center; padding:6px 0;}
+.sonar-sweep{transform-origin:100px 100px; animation:sweep 3.2s linear infinite;}
+@keyframes sweep{100%{transform:rotate(360deg);}}
+.nav-readout{font-family:var(--mono); font-size:10.5px; color:var(--ink); display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px;}
+.nav-readout .k{color:var(--ink-dim);}
+
+/* ---------- comms ---------- */
+.comm-toggle{display:flex; justify-content:center; gap:0; margin:6px 0 14px; border:1px solid var(--panel-border); border-radius:9px; overflow:hidden; width:fit-content; margin-left:auto; margin-right:auto;}
+.comm-btn{font-family:var(--mono); font-size:10px; letter-spacing:.08em; padding:7px 16px; background:transparent; color:var(--ink-dim); border:none; cursor:pointer;}
+.comm-btn.active{background:var(--blue); color:#04101e; font-weight:700;}
+.comm-chain{display:flex; flex-direction:column; align-items:center; gap:2px; font-family:var(--mono); font-size:10.5px; color:var(--ink);}
+.comm-chain .node{border:1px solid var(--panel-border); padding:5px 14px; border-radius:7px;}
+.comm-chain .arrow{color:var(--ink-dim); font-size:11px;}
+
+/* ---------- safety ---------- */
+.safety-levels{display:flex; flex-direction:column; gap:8px;}
+.sf-level{
+  display:flex; align-items:center; gap:10px; border:1px solid rgba(255,207,63,0.25); background:rgba(255,207,63,0.05);
+  border-radius:9px; padding:9px 12px; font-family:var(--mono); font-size:10.5px;
+}
+.sf-num{color:var(--yellow); font-weight:700; width:20px;}
+.estop{
+  margin-top:14px; width:100%; padding:12px; border-radius:10px; border:1px solid var(--red);
+  background:rgba(255,77,94,0.1); color:#ffd7da; font-family:var(--mono); font-size:11px; letter-spacing:.12em;
+  cursor:pointer; font-weight:700; transition:.15s;
+}
+.estop:hover{background:rgba(255,77,94,0.22);}
+.estop-note{font-size:9px; color:var(--ink-dim); text-align:center; margin-top:6px; letter-spacing:.08em;}
+.estop-log{
+  margin-top:10px; font-family:var(--mono); font-size:10px; color:var(--ink); min-height:20px; line-height:1.7;
+}
+.estop-log span{display:block; opacity:0; animation:fadein .3s forwards;}
+@keyframes fadein{to{opacity:1;}}
+
+/* ---------- verification ---------- */
+.verify-box{
+  border:1px solid var(--orange); background:rgba(255,150,64,0.08); border-radius:10px; padding:12px 14px;
+  font-family:var(--mono); font-size:10.5px; color:#ffd9b3; line-height:1.7;
+}
+.verify-box b{color:var(--orange);}
+
+/* ---------- mission control bar ---------- */
+.mission-bar{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:16px; margin-bottom:16px;
+}
+.mbtn{
+  font-family:var(--mono); font-size:11px; letter-spacing:.08em; padding:9px 18px; border-radius:8px;
+  border:1px solid var(--panel-border-hi); background:rgba(255,255,255,0.02); color:var(--ink-hi); cursor:pointer; transition:.15s;
+}
+.mbtn.primary{background:var(--green); color:#04140d; border-color:var(--green); font-weight:700;}
+.mbtn.primary:hover{filter:brightness(1.1);}
+.mbtn:hover{border-color:var(--panel-border-hi); background:rgba(255,255,255,0.06);}
+.mbtn:disabled{opacity:.35; cursor:not-allowed;}
+.progress-wrap{flex:1; min-width:220px;}
+.progress-track{height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;}
+.progress-fill{height:100%; width:0%; background:linear-gradient(90deg, var(--green), var(--cyan)); transition:width .5s;}
+.phase-label{font-family:var(--mono); font-size:10px; color:var(--ink-dim); margin-top:6px; letter-spacing:.06em;}
+
+/* ---------- status dashboard ---------- */
+.status-dash{display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px;}
+.sd-card{
+  border:1px solid var(--panel-border); border-radius:9px; padding:10px 12px; background:rgba(255,255,255,0.02);
+}
+.sd-card .name{font-family:var(--mono); font-size:10px; color:var(--ink-hi); letter-spacing:.06em;}
+.sd-card .state{display:flex; align-items:center; gap:6px; margin-top:6px; font-family:var(--mono); font-size:9.5px;}
+.sd-dot{width:6px; height:6px; border-radius:50%; background:var(--green);}
+.sd-dot.standby{background:var(--ink-dim);}
+.sd-dot.warn{background:var(--orange);}
+
+/* slogans */
+.slogan-bar{text-align:center; padding:22px 10px 8px; font-family:var(--mono);}
+.slogan-1{font-size:14px; letter-spacing:.2em; color:var(--cyan);}
+.slogan-2{font-size:10.5px; color:var(--ink-dim); margin-top:6px; letter-spacing:.06em; font-style:italic;}
+
+footer{text-align:center; padding:24px 0 4px; font-family:var(--mono); font-size:9.5px; color:var(--ink-dim); letter-spacing:.08em;}
+
+::selection{background:rgba(47,217,232,0.3);}
+
+/* ================= RESPONSIVE ================= */
+@media (max-width:900px){
+  .wrap{padding:16px 14px 44px;}
+  header.top{flex-direction:column; align-items:flex-start;}
+  .status-grid{align-items:flex-start; width:100%;}
+  .status-row{justify-content:flex-start;}
+}
+
+@media (max-width:768px){
+  .wrap{padding:14px 12px 36px;}
+  h1.brand{font-size:clamp(22px,7vw,34px);}
+  .hud-strip{gap:8px;}
+  .hud-chip{padding:5px 9px; font-size:10px;}
+  .mission-bar{padding:12px; gap:10px;}
+  .mbtn{padding:8px 12px; font-size:10px;}
+  .progress-wrap{min-width:100%; order:5;}
+  .grid[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important;}
+  .compute-cols{grid-template-columns:1fr;}
+  .ai-io{grid-template-columns:1fr;}
+  canvas#heatCanvas{height:240px;}
+  .sonar-wrap svg{max-width:180px; height:auto;}
+  .status-dash{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));}
+  .panel-body{padding:14px;}
+}
+
+@media (max-width:480px){
+  .wrap{padding:12px 10px 30px;}
+  .brand-eyebrow{font-size:9px; letter-spacing:.18em;}
+  h1.brand{font-size:clamp(19px,8vw,26px);}
+  .brand-line2{font-size:10.5px;}
+  .brand-line3{font-size:10px;}
+  .status-row{gap:8px;}
+  .led-item{font-size:9px;}
+  .hud-chip{font-size:9px; padding:5px 8px;}
+  .hud-chip b{font-size:11px;}
+  .panel-title{font-size:10px;}
+  .panel-body{padding:12px;}
+  .mission-bar{flex-direction:column; align-items:stretch;}
+  .mbtn{width:100%; text-align:center;}
+  .progress-wrap{min-width:0;}
+  .wq-grid{grid-template-columns:1fr;}
+  .nav-readout{grid-template-columns:1fr;}
+  .info-row{grid-template-columns:90px 1fr;}
+  .vial{width:44px;}
+  .vial .tube{width:16px; height:32px;}
+  canvas#heatCanvas{height:200px;}
+  .sonar-wrap svg{max-width:150px;}
+  .status-dash{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));}
+  .comm-toggle{width:100%;}
+  .comm-btn{flex:1;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <div class="brand-eyebrow">ROBOFEST GUJARAT 6.0 &nbsp;•&nbsp; MISSION CONTROL</div>
+      <h1 class="brand">ECOSENTINEL</h1>
+      <div class="brand-line2">AUTONOMOUS UNDERWATER ENVIRONMENTAL INTELLIGENCE</div>
+      <div class="brand-line3">Autonomous Water-Quality Intelligence &amp; Pollution-Mapping AUV</div>
+      <div class="hud-strip">
+        <div class="hud-chip"><span class="lbl">MISSION&nbsp;TIME</span><b id="hudTime">00:00:00</b></div>
+        <div class="hud-chip"><span class="lbl">DEPTH</span><b id="hudDepth">0.0 m</b></div>
+        <div class="hud-chip"><span class="lbl">BATTERY</span><b id="hudBatt">100%</b></div>
+      </div>
+    </div>
+    <div class="status-grid">
+      <div class="status-row">
+        <div class="led-item"><span class="led"></span>SYSTEM ONLINE</div>
+        <div class="led-item"><span class="led"></span>MISSION READY</div>
+      </div>
+      <div class="status-row">
+        <div class="led-item"><span class="led"></span>AUTONOMOUS MODE</div>
+        <div class="led-item"><span class="led"></span>SENSOR FUSION ACTIVE</div>
+      </div>
+      <div class="status-row">
+        <div class="led-item"><span class="led"></span>AI ENGINE READY</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MISSION CONTROL BAR -->
+  <div class="panel mission-bar">
+    <button class="mbtn primary" id="btnStart">▶ START MISSION</button>
+    <button class="mbtn" id="btnPause">❙❙ PAUSE</button>
+    <button class="mbtn" id="btnReset">↺ RESET</button>
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+      <div class="phase-label" id="phaseLabel">STANDBY — awaiting mission start</div>
+    </div>
+    <button class="mbtn" id="btnAuto">AUTO MODE</button>
+    <button class="mbtn" id="btnManual">MANUAL MODE</button>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT COLUMN -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title" style="color:var(--red)">POWER SYSTEM</div><div class="panel-sub">4S Li-ion · 14.8V 20Ah</div></div><span class="tag" style="color:var(--red)">PWR</span></div>
+        <div class="panel-body">
+          <div class="pw-flow">
+            <div class="pw-node">BATTERY <span id="pwBattV">14.8V</span></div>
+            <div class="pw-arrow">↓</div>
+            <div class="pw-node">BMS</div>
+            <div class="pw-arrow">↓</div>
+            <div class="pw-node">PDB</div>
+            <div class="pw-arrow">↓</div>
+            <div class="pw-node">BUCK CONVERTERS</div>
+            <div class="pw-arrow">↓</div>
+            <div class="pw-node">SUBSYSTEMS</div>
+          </div>
+          <div class="pw-stats">
+            <div class="stat-box"><div class="lbl">VOLTAGE</div><div class="val" id="stVolt">14.8 V</div></div>
+            <div class="stat-box"><div class="lbl">CURRENT</div><div class="val" id="stCurr">6.2 A</div></div>
+            <div class="stat-box"><div class="lbl">POWER</div><div class="val" id="stPow">91.8 W</div></div>
+            <div class="stat-box"><div class="lbl">TEMP</div><div class="val" id="stTemp">31.4°C</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title" style="color:var(--purple)">PROPULSION</div><div class="panel-sub">6 × thruster output</div></div><span class="tag" style="color:var(--purple)">PRP</span></div>
+        <div class="panel-body" id="thrPanel"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="color:var(--orange)">EMERGENCY / SAFETY</div><span class="tag" style="color:var(--yellow)">SAFE</span></div>
+        <div class="panel-body">
+          <div class="safety-levels">
+            <div class="sf-level"><span class="sf-num">1</span>LEAK DETECTION</div>
+            <div class="sf-level"><span class="sf-num">2</span>STM32 WATCHDOG</div>
+            <div class="sf-level"><span class="sf-num">3</span>EMERGENCY BALLAST RELEASE</div>
+            <div class="sf-level"><span class="sf-num">4</span>SURFACE + BEACON RECOVERY</div>
+          </div>
+          <button class="estop" id="btnEstop">⚠ EMERGENCY STOP</button>
+          <div class="estop-note">SIMULATION ONLY</div>
+          <div class="estop-log" id="estopLog"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: HERO + HEATMAP + AI -->
+    <div class="col" style="grid-column:2;">
+      <div class="panel hero">
+        <div class="panel-head">
+          <div class="panel-title" style="color:var(--white)">AUV — TECHNICAL VIEW</div>
+          <span class="tag" style="color:var(--cyan)">CLICK COMPONENTS</span>
+        </div>
+        <div class="panel-body">
+          <div class="view-tabs">
+            <button class="view-tab active" data-view="side">SIDE</button>
+            <button class="view-tab" data-view="top">TOP</button>
+            <button class="view-tab" data-view="cutaway">CUTAWAY</button>
+          </div>
+          <div class="auv-stage" id="auvStage"><!-- svg injected --></div>
+          <div class="info-card" id="infoCard"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div><div class="panel-title" style="color:var(--cyan)">ENVIRONMENTAL DIGITAL TWIN</div><div class="panel-sub">Live pollution heatmap &amp; sampling grid</div></div>
+          <span class="tag" style="color:var(--cyan)">WQI MAP</span>
+        </div>
+        <div class="panel-body heatmap-wrap">
+          <div class="hotspot-alert" id="hotspotAlert">⚠ POLLUTION HOTSPOT DETECTED</div>
+          <canvas id="heatCanvas"></canvas>
+          <div class="heat-legend">
+            <span><i style="background:#1c4d6e"></i>LOW</span>
+            <span><i style="background:#2fb3a8"></i>MODERATE</span>
+            <span><i style="background:#e8b23f"></i>HIGH</span>
+            <span><i style="background:#ff4d5e"></i>CRITICAL</span>
+            <span><i style="background:var(--white); border-radius:50%;"></i>AUV POSITION</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr 1fr; margin-bottom:0;">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title" style="color:var(--cyan)">WATER QUALITY</div><span class="tag" style="color:var(--cyan)">LIVE</span></div>
+          <div class="panel-body wq-grid" id="wqGrid"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title" style="color:var(--green)">AI PREDICTION ENGINE</div><span class="tag" style="color:var(--green)">ACTIVE</span></div>
+          <div class="panel-body">
+            <div class="ai-io">
+              <div class="ai-col in"><h5>INPUTS</h5><ul>
+                <li>Sensor fusion stream</li><li>Depth / position</li><li>Historical samples</li>
+              </ul></div>
+              <div class="ai-col out"><h5>OUTPUTS</h5><ul>
+                <li>Pollution spread</li><li>Algal bloom risk</li><li>O₂ depletion risk</li>
+              </ul></div>
+            </div>
+            <div class="confidence"><div class="num" id="aiConf">92.7%</div><div class="lbl">AI CONFIDENCE</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="color:var(--blue)">NAVIGATION &amp; SONAR</div><span class="tag" style="color:var(--blue)">NAV</span></div>
+        <div class="panel-body">
+          <div class="sonar-wrap">
+            <svg width="200" height="200" viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(77,141,255,0.25)" stroke-width="1"/>
+              <circle cx="100" cy="100" r="60" fill="none" stroke="rgba(77,141,255,0.2)" stroke-width="1"/>
+              <circle cx="100" cy="100" r="30" fill="none" stroke="rgba(77,141,255,0.2)" stroke-width="1"/>
+              <g class="sonar-sweep">
+                <path d="M100,100 L100,10 A90,90 0 0,1 163,37 Z" fill="rgba(77,141,255,0.18)"/>
+              </g>
+              <circle cx="100" cy="100" r="4" fill="var(--white)"/>
+              <circle cx="140" cy="60" r="4" fill="var(--orange)"/>
+              <text x="10" y="196" fill="var(--ink-dim)" font-family="monospace" font-size="8">115 kHz</text>
+            </svg>
+          </div>
+          <div class="nav-readout">
+            <div><span class="k">OBSTACLE</span></div><div id="navObs">3.8 m — FRONT RIGHT</div>
+            <div><span class="k">HEADING</span></div><div id="navHead">042°</div>
+            <div><span class="k">EST. POSITION</span></div><div id="navPos">12.4, 8.1 m</div>
+            <div><span class="k">AVOIDANCE CMD</span></div><div id="navCmd" style="color:var(--blue)">YAW LEFT 15°</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="color:var(--yellow)">SMART SAMPLING</div><span class="tag" style="color:var(--yellow)">6 VIALS</span></div>
+        <div class="panel-body">
+          <div class="vials" id="vialsGrid"></div>
+          <div class="gripper-states">
+            <div class="g-state" data-g="OPEN">OPEN</div>
+            <div class="g-state" data-g="APPROACH">APPROACH</div>
+            <div class="g-state" data-g="GRAB">GRAB</div>
+            <div class="g-state" data-g="HOLD">HOLD</div>
+            <div class="g-state" data-g="RELEASE">RELEASE</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="color:var(--white)">COMMUNICATION</div><span class="tag" style="color:var(--white)">LINK</span></div>
+        <div class="panel-body">
+          <div class="comm-toggle">
+            <button class="comm-btn active" data-mode="under">UNDERWATER</button>
+            <button class="comm-btn" data-mode="surface">SURFACE</button>
+          </div>
+          <div class="comm-chain" id="commChain"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title" style="color:var(--orange)">[VERIFY]</div></div>
+        <div class="panel-body">
+          <div class="verify-box">
+            <b>Vertical thruster voltage compatibility.</b><br><br>
+            Current design: 4 × ROVMAKER T60E, 2 × HobbyWater TD7 Pro<br>
+            Current bus: 14.8 V &nbsp;·&nbsp; TD7 Pro rated: 24 V<br><br>
+            <b>FULL RATED THRUST NOT ASSUMED — VERIFY FINAL CONFIGURATION.</b><br><br>
+            <span style="color:var(--ink-dim)">This panel reflects CURRENT DESIGN only, not an ideation/alternative configuration.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPUTING ARCHITECTURE -->
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><div class="panel-title" style="color:var(--green)">COMPUTING ARCHITECTURE</div><span class="tag" style="color:var(--green)">DUAL-LEVEL</span></div>
+    <div class="panel-body">
+      <div class="compute-cols">
+        <div class="compute-box">
+          <h5>HIGH LEVEL — RASPBERRY PI 5 (8GB)</h5>
+          <ul><li>Ubuntu 22.04 · ROS 2 Humble</li><li>Nav2 · OpenCV · YOLOv8</li><li>Mission planning &amp; AI</li><li>Pollution mapping / sensor fusion</li></ul>
+        </div>
+        <div class="compute-box">
+          <h5>LOW LEVEL — STM32F407</h5>
+          <ul><li>PWM · ESC control</li><li>Sensor acquisition</li><li>Watchdog / leak detection</li><li>Real-time actuator control</li></ul>
+        </div>
+      </div>
+      <div class="data-chain">
+        <span class="node">RASPBERRY PI</span><span>—UART→</span><span class="node">STM32</span><span>—PWM→</span><span class="node">6 × ESC</span><span>→</span><span class="node">6 × THRUSTERS</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS DASHBOARD -->
+  <div class="panel" style="margin-bottom:6px;">
+    <div class="panel-head"><div class="panel-title">LIVE STATUS DASHBOARD</div></div>
+    <div class="panel-body status-dash" id="statusDash"></div>
+  </div>
+
+  <div class="slogan-bar">
+    <div class="slogan-1">DETECT → MAP → COLLECT → ANALYZE → PREDICT</div>
+    <div class="slogan-2">"From raw water data to environmental intelligence."</div>
+  </div>
+  <footer>ECOSENTINEL — RoboFest Gujarat 6.0 — Engineering Digital Twin — Simulated telemetry for demonstration purposes</footer>
+</div>
+
+<script>
+/* ============ HERO AUV SVG ============ */
+const hotspotData = {
+  hull:{name:"PRESSURE HULL", fn:"Houses electronics, waterproof to rated depth", iface:"—", power:"—", data:"Structural / thermal", fail:"Leak sensor trips on ingress"},
+  cam:{name:"FRONT CAMERA", fn:"Vision input for obstacle & sample targeting", iface:"CSI / USB", power:"5V, 0.4A", data:"→ Raspberry Pi (OpenCV/YOLOv8)", fail:"Falls back to sonar-only nav"},
+  sonar:{name:"FORWARD SONAR", fn:"Obstacle ranging, 115kHz", iface:"UART", power:"12V, 0.3A", data:"→ STM32 → Nav fusion", fail:"Reduce speed, widen safety margin"},
+  probe:{name:"WATER-QUALITY PROBE ARRAY", fn:"pH / turbidity / TDS / DO / temp sensing", iface:"I2C via ADS1115", power:"5V, 0.2A", data:"→ STM32 → Pi → AI model", fail:"Flag reading as unreliable, retry"},
+  thrusters:{name:"THRUSTER ARRAY (×6)", fn:"4 horizontal + 2 vertical for 6-DOF control", iface:"ESC / PWM", power:"14.8V bus, up to 8A/thruster", fail:"Isolate faulty ESC, reduce authority"},
+  gripper:{name:"SAMPLING GRIPPER", fn:"Two-finger gripper for debris / sample capture", iface:"Servo PWM", power:"6V, 1.2A", data:"→ STM32 command", fail:"Abort grab, resume mission"},
+  foam:{name:"BUOYANCY FOAM", fn:"Passive buoyancy trim", iface:"—", power:"—", data:"—", fail:"—"}
+};
+function renderInfo(key){
+  const d = hotspotData[key]; if(!d) return;
+  const card = document.getElementById('infoCard');
+  card.innerHTML = `<h4>${d.name}</h4>
+    <div class="info-row"><b>FUNCTION</b><span>${d.fn}</span></div>
+    <div class="info-row"><b>INTERFACE</b><span>${d.iface||'—'}</span></div>
+    <div class="info-row"><b>POWER</b><span>${d.power||'—'}</span></div>
+    <div class="info-row"><b>DATA FLOW</b><span>${d.data||'—'}</span></div>
+    <div class="info-row"><b>FAILURE RESPONSE</b><span>${d.fail||'—'}</span></div>`;
+  card.classList.add('show');
+}
+function auvSVG(view){
+  const hs = (x,y,key,label)=>`<g class="hotspot" onclick="renderInfo('${key}')">
+      <circle class="hs-pulse" cx="${x}" cy="${y}" r="9" fill="none" stroke="var(--cyan)" stroke-width="1"/>
+      <circle cx="${x}" cy="${y}" r="6"/>
+      <text class="thrust-badge" x="${x}" y="${y-14}" text-anchor="middle">${label}</text>
+    </g>`;
+  const body = `
+    <ellipse cx="350" cy="150" rx="230" ry="46" fill="rgba(255,255,255,0.03)" stroke="rgba(240,247,249,0.35)" stroke-width="1.5"/>
+    <ellipse cx="130" cy="150" rx="20" ry="46" fill="rgba(47,217,232,0.08)" stroke="rgba(47,217,232,0.4)" stroke-width="1.2"/>
+    <ellipse cx="570" cy="150" rx="24" ry="40" fill="rgba(169,112,255,0.1)" stroke="rgba(169,112,255,0.4)" stroke-width="1.2"/>
+    <rect x="230" y="112" width="220" height="14" rx="6" fill="rgba(255,255,255,0.05)"/>
+    <circle cx="120" cy="150" r="7" fill="var(--cyan)" opacity=".8"/>
+  `;
+  const thrusters = `
+    <ellipse cx="230" cy="196" rx="14" ry="9" fill="rgba(169,112,255,0.35)" stroke="var(--purple)"/>
+    <ellipse cx="470" cy="196" rx="14" ry="9" fill="rgba(169,112,255,0.35)" stroke="var(--purple)"/>
+    <ellipse cx="350" cy="204" rx="12" ry="8" fill="rgba(169,112,255,0.25)" stroke="var(--purple)"/>
+  `;
+  return `<svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg">
+    <defs><style>text{fill:var(--ink-dim); font-family:monospace;} .hotspot circle:nth-child(2){fill:rgba(47,217,232,0.18); stroke:var(--cyan); stroke-width:1.4;}</style></defs>
+    ${body}${thrusters}
+    ${hs(130,120,'cam','CAM')}
+    ${hs(180,150,'sonar','SONAR')}
+    ${hs(260,150,'probe','PROBE')}
+    ${hs(350,130,'hull','HULL')}
+    ${hs(230,196,'thrusters','THR')}
+    ${hs(430,150,'gripper','GRIP')}
+    ${hs(500,120,'foam','FOAM')}
+    <text x="350" y="248" text-anchor="middle" font-size="10" letter-spacing="2">${view.toUpperCase()} VIEW — CLICK A COMPONENT</text>
+  </svg>`;
+}
+const stage = document.getElementById('auvStage');
+stage.innerHTML = auvSVG('side');
+document.querySelectorAll('.view-tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.view-tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    stage.innerHTML = auvSVG(btn.dataset.view);
+  });
+});
+
+/* ============ THRUSTER PANEL ============ */
+const thrLabels = ['T1','T2','T3','T4','T5','T6'];
+const thrPanel = document.getElementById('thrPanel');
+thrPanel.innerHTML = thrLabels.map(l=>`
+  <div class="thr-row">
+    <span class="thr-label">${l}</span>
+    <div class="thr-bar-bg"><div class="thr-bar-fill" id="fill-${l}" style="width:40%"></div></div>
+    <span class="thr-val" id="val-${l}">40%</span>
+  </div>`).join('');
+function jitterThrusters(base){
+  thrLabels.forEach((l,i)=>{
+    const v = Math.max(4, Math.min(96, base[i] + (Math.random()*10-5)));
+    document.getElementById('fill-'+l).style.width = v.toFixed(0)+'%';
+    document.getElementById('val-'+l).textContent = v.toFixed(0)+'%';
+  });
+}
+jitterThrusters([42,42,42,42,30,30]);
+
+/* ============ WATER QUALITY ============ */
+const wqDefs = [
+  {k:'pH', v:7.32, unit:'', max:14, color:'var(--cyan)'},
+  {k:'TURBIDITY', v:18, unit:' NTU', max:60, color:'var(--cyan)'},
+  {k:'TDS', v:412, unit:' ppm', max:1000, color:'var(--cyan)'},
+  {k:'DISSOLVED O₂', v:6.8, unit:' mg/L', max:12, color:'var(--cyan)'},
+];
+const wqGrid = document.getElementById('wqGrid');
+wqGrid.innerHTML = wqDefs.map(d=>`
+  <div class="wq-item">
+    <div class="lbl">${d.k}</div>
+    <div class="val" id="wq-${d.k}">${d.v}${d.unit}</div>
+    <div class="wq-bar"><i style="width:${(d.v/d.max*100).toFixed(0)}%"></i></div>
+  </div>`).join('');
+function jitterWQ(){
+  wqDefs.forEach(d=>{
+    const nv = Math.max(0, d.v + (Math.random()*d.v*0.06 - d.v*0.03));
+    document.getElementById('wq-'+d.k).textContent = nv.toFixed(2)+d.unit;
+    document.getElementById('wq-'+d.k).nextElementSibling.querySelector('i').style.width = (nv/d.max*100).toFixed(0)+'%';
+  });
+}
+
+/* ============ VIALS ============ */
+const vialsGrid = document.getElementById('vialsGrid');
+const vialState = [0,0,0,0,0,0]; // 0 empty,1 collecting,2 sealed
+function renderVials(){
+  vialsGrid.innerHTML = vialState.map((s,i)=>{
+    const cls = s===2?'sealed':(s===1?'collecting':'');
+    const lbl = s===2?'SEALED':(s===1?'COLLECT..':'EMPTY');
+    return `<div class="vial ${cls}"><div class="tube"><i></i></div>SAMPLE 0${i+1}<br>${lbl}</div>`;
+  }).join('');
+}
+renderVials();
+
+/* ============ COMMS ============ */
+function renderComm(mode){
+  const chain = document.getElementById('commChain');
+  if(mode==='under'){
+    chain.innerHTML = `<div class="node">SENSORS</div><div class="arrow">↓</div><div class="node">STM32</div><div class="arrow">↓</div><div class="node">RASPBERRY PI</div><div class="arrow">↓</div><div class="node">MicroSD LOG</div><div style="margin-top:6px; color:var(--ink-dim); font-size:9px;">NO WI-FI UNDERWATER</div>`;
+  } else {
+    chain.innerHTML = `<div class="node">SURFACE MODE</div><div class="arrow">↓</div><div class="node">Wi-Fi LINK</div><div class="arrow">↓</div><div class="node">DATA OFFLOAD</div>`;
+  }
+}
+renderComm('under');
+document.querySelectorAll('.comm-btn').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('.comm-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); renderComm(b.dataset.mode);
+}));
+
+/* ============ GRIPPER STATE CYCLE ============ */
+const gStates = ['OPEN','APPROACH','GRAB','HOLD','RELEASE'];
+let gIdx = 0;
+function cycleGripper(){
+  document.querySelectorAll('.g-state').forEach(el=>el.classList.remove('active'));
+  document.querySelector(`.g-state[data-g="${gStates[gIdx]}"]`).classList.add('active');
+  gIdx = (gIdx+1)%gStates.length;
+}
+cycleGripper();
+
+/* ============ STATUS DASHBOARD ============ */
+const subsystems = ['BATTERY','STM32','RASPBERRY PI','PROPULSION','WATER QUALITY','SONAR','VISION','NAVIGATION','SAMPLING','SAFETY','COMMUNICATION','AI'];
+const dash = document.getElementById('statusDash');
+dash.innerHTML = subsystems.map(s=>`
+  <div class="sd-card"><div class="name">${s}</div>
+    <div class="state"><span class="sd-dot" id="dot-${s}"></span><span id="txt-${s}">ONLINE</span></div>
+  </div>`).join('');
+
+/* ============ HEATMAP CANVAS ============ */
+const canvas = document.getElementById('heatCanvas');
+const ctx = canvas.getContext('2d');
+function fitCanvas(){
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+}
+const samplePoints = [
+  {x:0.15,y:0.3,wqi:0.2},{x:0.3,y:0.55,wqi:0.35},{x:0.5,y:0.35,wqi:0.55},
+  {x:0.65,y:0.6,wqi:0.85},{x:0.8,y:0.4,wqi:0.95},{x:0.45,y:0.75,wqi:0.4},
+  {x:0.25,y:0.15,wqi:0.15},{x:0.7,y:0.2,wqi:0.6}
+];
+let auvPos = {x:0.15, y:0.3};
+let auvTarget = null;
+function wqiColor(v){
+  if(v<0.35) return [28,77,110];
+  if(v<0.6) return [47,179,168];
+  if(v<0.8) return [232,178,63];
+  return [255,77,94];
+}
+function drawHeatmap(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#031019'; ctx.fillRect(0,0,w,h);
+  // grid
+  ctx.strokeStyle = 'rgba(90,160,190,0.06)';
+  for(let gx=0; gx<w; gx+=30){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,h);ctx.stroke();}
+  for(let gy=0; gy<h; gy+=30){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(w,gy);ctx.stroke();}
+  // gradient blobs per sample point
+  samplePoints.forEach(p=>{
+    const cx=p.x*w, cy=p.y*h;
+    const col = wqiColor(p.wqi);
+    const grad = ctx.createRadialGradient(cx,cy,2,cx,cy,90);
+    grad.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},0.55)`);
+    grad.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx,cy,90,0,Math.PI*2); ctx.fill();
+  });
+  // sample point markers
+  samplePoints.forEach(p=>{
+    const cx=p.x*w, cy=p.y*h;
+    ctx.fillStyle = 'rgba(240,247,249,0.85)';
+    ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
+  });
+  // AUV marker
+  const ax=auvPos.x*w, ay=auvPos.y*h;
+  ctx.strokeStyle = 'var(--white)';
+  ctx.fillStyle = '#f3f7f9';
+  ctx.beginPath(); ctx.arc(ax,ay,6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ax,ay,11,0,Math.PI*2); ctx.strokeStyle='rgba(243,247,249,0.4)'; ctx.stroke();
+}
+fitCanvas(); drawHeatmap();
+window.addEventListener('resize', ()=>{fitCanvas(); drawHeatmap();});
+
+/* ============ CLOCK / TELEMETRY TICK ============ */
+let missionSeconds = 0;
+let depth = 0, battery = 100;
+function tick(){
+  missionSeconds++;
+  const h = String(Math.floor(missionSeconds/3600)).padStart(2,'0');
+  const m = String(Math.floor((missionSeconds%3600)/60)).padStart(2,'0');
+  const s = String(missionSeconds%60).padStart(2,'0');
+  document.getElementById('hudTime').textContent = `${h}:${m}:${s}`;
+  document.getElementById('hudDepth').textContent = depth.toFixed(1)+' m';
+  document.getElementById('hudBatt').textContent = Math.max(0,battery).toFixed(0)+'%';
+
+  jitterThrusters(currentThrustBase);
+  jitterWQ();
+
+  const volt = (14.8 - (100-battery)*0.01).toFixed(1);
+  const curr = (5.5 + Math.random()*1.5).toFixed(1);
+  document.getElementById('pwBattV').textContent = volt+'V';
+  document.getElementById('stVolt').textContent = volt+' V';
+  document.getElementById('stCurr').textContent = curr+' A';
+  document.getElementById('stPow').textContent = (volt*curr).toFixed(1)+' W';
+  document.getElementById('stTemp').textContent = (30+Math.random()*3).toFixed(1)+'°C';
+
+  document.getElementById('aiConf').textContent = (90+Math.random()*4).toFixed(1)+'%';
+  document.getElementById('navObs').textContent = (2.5+Math.random()*3).toFixed(1)+' m — FRONT RIGHT';
+  document.getElementById('navHead').textContent = (Math.floor(Math.random()*360)).toString().padStart(3,'0')+'°';
+
+  if(missionRunning){
+    battery -= 0.15;
+    // move AUV toward target
+    if(auvTarget){
+      auvPos.x += (auvTarget.x-auvPos.x)*0.04;
+      auvPos.y += (auvTarget.y-auvPos.y)*0.04;
+    }
+    drawHeatmap();
+  }
+  cycleGripper();
+}
+let currentThrustBase = [42,42,42,42,30,30];
+setInterval(tick, 1000);
+
+/* ============ MISSION SIMULATION ============ */
+const phases = [
+  "PHASE 01 — SYSTEM INITIALIZATION",
+  "PHASE 02 — POWER DISTRIBUTION",
+  "PHASE 03 — SENSOR CALIBRATION",
+  "PHASE 04 — THRUSTER CHECK",
+  "PHASE 05 — NAVIGATION INITIALIZATION",
+  "PHASE 06 — DESCENT",
+  "PHASE 07 — WATER QUALITY SURVEY",
+  "PHASE 08 — POLLUTION HOTSPOT DETECTION",
+  "PHASE 09 — AUTONOMOUS NAVIGATION",
+  "PHASE 10 — SMART SAMPLING",
+  "PHASE 11 — AI ANALYSIS",
+  "PHASE 12 — POLLUTION PREDICTION",
+  "PHASE 13 — MISSION COMPLETE"
+];
+let missionRunning = false;
+let missionPaused = false;
+let phaseIdx = 0;
+let phaseTimer = null;
+
+function setPhase(i){
+  phaseIdx = i;
+  document.getElementById('phaseLabel').textContent = phases[i];
+  document.getElementById('progFill').style.width = ((i+1)/phases.length*100)+'%';
+
+  if(phases[i].includes('DESCENT')) depth = 4.2;
+  if(phases[i].includes('SURVEY')) depth = 6.8;
+  if(phases[i].includes('DETECTION')){
+    document.getElementById('hotspotAlert').classList.add('show');
+    auvTarget = {x:0.8, y:0.4}; // move toward the critical sample point
+  }
+  if(phases[i].includes('NAVIGATION') && !phases[i].includes('INITIALIZATION')){
+    currentThrustBase = [58,58,58,58,20,20];
+  }
+  if(phases[i].includes('SAMPLING')){
+    currentThrustBase = [15,15,15,15,45,45];
+    let vi = 0;
+    const collectStep = setInterval(()=>{
+      if(vi>=6){clearInterval(collectStep); return;}
+      vialState[vi]=1; renderVials();
+      setTimeout(()=>{vialState[vi]=2; renderVials();}, 700);
+      vi++;
+    }, 550);
+  }
+  if(phases[i].includes('ANALYSIS')){
+    document.getElementById('hotspotAlert').classList.remove('show');
+  }
+  if(phases[i].includes('COMPLETE')){
+    currentThrustBase = [0,0,0,0,55,55];
+    depth = 0;
+    missionRunning = false;
+    document.getElementById('btnStart').disabled = false;
+  }
+}
+
+document.getElementById('btnStart').addEventListener('click', ()=>{
+  if(missionRunning) return;
+  missionRunning = true; missionPaused = false;
+  document.getElementById('btnStart').disabled = true;
+  phaseIdx = 0; setPhase(0);
+  phaseTimer = setInterval(()=>{
+    if(missionPaused) return;
+    if(phaseIdx < phases.length-1){ setPhase(phaseIdx+1); }
+    else { clearInterval(phaseTimer); }
+  }, 2200);
+});
+document.getElementById('btnPause').addEventListener('click', ()=>{
+  missionPaused = !missionPaused;
+  document.getElementById('btnPause').textContent = missionPaused ? '▶ RESUME' : '❙❙ PAUSE';
+});
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  clearInterval(phaseTimer);
+  missionRunning=false; missionPaused=false;
+  phaseIdx=0; depth=0; battery=100; missionSeconds=0;
+  currentThrustBase=[42,42,42,42,30,30];
+  auvTarget=null; auvPos={x:0.15,y:0.3};
+  vialState.forEach((_,i)=>vialState[i]=0); renderVials();
+  document.getElementById('progFill').style.width='0%';
+  document.getElementById('phaseLabel').textContent='STANDBY — awaiting mission start';
+  document.getElementById('btnStart').disabled=false;
+  document.getElementById('btnPause').textContent='❙❙ PAUSE';
+  document.getElementById('hotspotAlert').classList.remove('show');
+  drawHeatmap();
+});
+let autoMode = true;
+document.getElementById('btnAuto').addEventListener('click', ()=>{
+  autoMode = true;
+  document.getElementById('btnAuto').style.borderColor='var(--green)';
+  document.getElementById('btnManual').style.borderColor='var(--panel-border-hi)';
+});
+document.getElementById('btnManual').addEventListener('click', ()=>{
+  autoMode = false;
+  document.getElementById('btnManual').style.borderColor='var(--yellow)';
+  document.getElementById('btnAuto').style.borderColor='var(--panel-border-hi)';
+});
+
+/* ============ E-STOP ============ */
+document.getElementById('btnEstop').addEventListener('click', ()=>{
+  const seq = ["SYSTEM WARNING","THRUSTERS SAFE","BALLAST RELEASE","POSITIVE BUOYANCY","SURFACE","STROBE ACTIVE","RF BEACON ON"];
+  const log = document.getElementById('estopLog');
+  log.innerHTML='';
+  currentThrustBase=[0,0,0,0,0,0];
+  seq.forEach((line,i)=>{
+    setTimeout(()=>{
+      const s=document.createElement('span');
+      s.textContent = '› '+line;
+      log.appendChild(s);
+      if(line==='SURFACE') depth=0;
+    }, i*450);
+  });
+});
+
+/* ============ subsystem status flicker (subtle) ============ */
+setInterval(()=>{
+  const s = subsystems[Math.floor(Math.random()*subsystems.length)];
+  const dot = document.getElementById('dot-'+s), txt = document.getElementById('txt-'+s);
+  if(Math.random()<0.15){
+    dot.className='sd-dot warn'; txt.textContent='WARNING';
+    setTimeout(()=>{dot.className='sd-dot'; txt.textContent='ONLINE';}, 1800);
+  }
+}, 3000);
+</script>
+</body>
+</html>
